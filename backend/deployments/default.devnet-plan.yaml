@@ -1,0 +1,36 @@
+---
+id: 0
+name: Devnet deployment
+network: devnet
+stacks-node: "http://localhost:20443"
+bitcoin-node: "http://devnet:devnet@localhost:18443"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - requirement-publish:
+            contract-id: SPBMRFRPPGCDE3F384WCJPK8PQJGZ8K9QKK7F59X.sip-010-trait-ft-standard
+            remap-sender: SPBMRFRPPGCDE3F384WCJPK8PQJGZ8K9QKK7F59X
+            remap-principals:
+              ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            cost: 8400
+            path: "./.cache/requirements/SPBMRFRPPGCDE3F384WCJPK8PQJGZ8K9QKK7F59X.sip-010-trait-ft-standard.clar"
+            clarity-version: 1
+      epoch: "2.0"
+    - id: 1
+      transactions:
+        - contract-publish:
+            contract-name: sbtc-token
+            expected-sender: SPBMRFRPPGCDE3F384WCJPK8PQJGZ8K9QKK7F59X
+            cost: 11500
+            path: contracts/sbtc-token.clar
+            anchor-block-only: true
+            clarity-version: 2
+        - contract-publish:
+            contract-name: rewards-distribution
+            expected-sender: SPBMRFRPPGCDE3F384WCJPK8PQJGZ8K9QKK7F59X
+            cost: 59800
+            path: contracts/rewards-distribution.clar
+            anchor-block-only: true
+            clarity-version: 2
+      epoch: "2.5"

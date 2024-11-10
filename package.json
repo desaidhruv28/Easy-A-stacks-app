@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "groq-sdk": "^0.7.0",
+    "openai": "^4.71.1",
+    "youtube-transcript": "^1.2.1",
+    "ytdl-core": "^4.11.5"
+  }
+}
