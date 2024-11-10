@@ -5,5 +5,16 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "groq-sdk": "^0.7.0",
+    "mongoose": "^8.8.1",
+    "nodemon": "^3.1.7",
+    "youtube-transcript": "^1.0.8",
+    "ytdl-core": "^4.11.5"
   }
 }
