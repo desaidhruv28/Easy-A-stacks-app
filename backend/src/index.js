@@ -1,36 +1,68 @@
 const express = require('express');
+const app = express();
 const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const userRoutes = require('./routes/user.routes');
+const { Video, User, VideoUserQuiz, Payment, Transaction } = require('./models');
 
 const Groq = require('groq-sdk');
 const axios = require('axios');
 const ytdl = require('ytdl-core');  // Changed to ytdl-core instead of youtube-dl-exec
 const { YoutubeTranscript } = require('youtube-transcript');
+const {Types} = require("mongoose");
 require('dotenv').config();
 
 
 dotenv.config();
 
 // Connect to MongoDB
-connectDB();
+// connectDB();
 
-const app = express();
+async function setupIndexes() {
+  try {
+    await Promise.all([
+      Video.collection.createIndex({ video_title: 1 }),
+      Video.collection.createIndex({ video_url: 1 }, { unique: true }),
+      User.collection.createIndex({ stack_key: 1 }, { unique: true }),
+      VideoUserQuiz.collection.createIndex({ userId: 1, videoId: 1 }),
+      VideoUserQuiz.collection.createIndex({ quizDate: 1 }),
+      Payment.collection.createIndex({ videoId: 1 }),
+      Payment.collection.createIndex({ createdAt: 1 }),
+      Transaction.collection.createIndex({ userId: 1, videoId: 1 }),
+      Transaction.collection.createIndex({ paymentStatus: 1 }),
+      Transaction.collection.createIndex({ paymentDate: 1 })
+    ]);
+    console.log('Database indexes ensured');
+  } catch (error) {
+    console.error('Error setting up indexes:', error);
+  }
+}
+
+// Call it after database connection
+connectDB().then(() => {
+  setupIndexes();
+});
+
+
 const port = process.env.PORT || 5001;
 
-app.use(cors());
+// app.use(cors());
+// CORS configuration to allow everything
+app.use(cors({
+  origin: '*',               // Allow any origin
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all HTTP methods
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept'], // Allow specified headers
+  exposedHeaders: ['Content-Length', 'X-Content-Range'], // Expose specific headers
+}));
 app.use(express.json());
 
-// Initialize Groq
-// const groq = new Groq({
-//   apiKey: process.env.GROQ_API_KEY
-// });
+
 // Initialize Groq with error handling
 let groq;
 try {
   groq = new Groq({
-    apiKey: "################################"
+    apiKey: process.env.GROQ_API_KEY
   });
 } catch (error) {
   console.error('Error initializing Groq:', error);
@@ -188,6 +220,15 @@ app.post('/api/process-youtube', async (req, res) => {
       return question;
     });
 
+    // // Save video details to a database
+    // const video = new Video({
+    //   video_url: youtubeUrl,
+    //   video_title: videoInfo.videoDetails.title,
+    //   video_duration: videoInfo.videoDetails.lengthSeconds,
+    //   video_thumbnail: videoInfo.videoDetails.thumbnails[0].url
+    // });
+    // await video.save();
+
     res.json({
       videoInfo: {
         title: videoInfo.videoDetails.title,
@@ -269,3 +310,390 @@ app.get('/health', (req, res) => {
     groqInitialized: !!groq
   });
 });
+
+
+// Add the route handler for getting all users
+app.get('/api/users/list', async (req, res) => {
+  try {
+    // Extract query parameters for pagination and filtering
+    const {
+      page = 1,
+      limit = 10,
+      search = '',
+      sortBy = 'name',
+      order = 'asc'
+    } = req.query;
+
+    // Create filter object for search
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } }, // Case-insensitive name search
+        { email: { $regex: search, $options: 'i' } }  // Case-insensitive email search
+      ];
+    }
+
+    // Calculate skip value for pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Create sort object
+    const sortObject = {};
+    sortObject[sortBy] = order === 'asc' ? 1 : -1;
+
+    // Fetch users with pagination
+    const users = await User.find(filter)
+    .select('_id name') // Only select necessary fields
+    .sort(sortObject)
+    .skip(skip)
+    .limit(parseInt(limit));
+
+    // Get total count for pagination
+    const totalUsers = await User.countDocuments(filter);
+    const totalPages = Math.ceil(totalUsers / parseInt(limit));
+
+    // Transform data to return only required fields
+    const transformedUsers = users.map(user => ({
+      id: user._id,
+      name: user.name,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        users: transformedUsers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalUsers,
+          hasNextPage: parseInt(page) < totalPages,
+          hasPrevPage: parseInt(page) > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch users',
+      details: error.message
+    });
+  }
+});
+
+// Add a route to get a specific user by ID
+app.get('/api/users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId)
+    .select('_id name');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: user._id,
+        name: user.name,
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user',
+      details: error.message
+    });
+  }
+});
+
+// Add the route handler for getting all videos
+app.get('/api/videos', async (req, res) => {
+  try {
+    // Extract query parameters for pagination and filtering
+    const {
+      page = 1,
+      limit = 10,
+      search = '',
+      sortBy = 'video_title',
+      order = 'asc'
+    } = req.query;
+
+    // Create filter object for search
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { video_title: { $regex: search, $options: 'i' } }, // Case-insensitive title search
+        { video_url: { $regex: search, $options: 'i' } }    // Case-insensitive URL search
+      ];
+    }
+
+    // Calculate skip value for pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Create sort object
+    const sortObject = {};
+    sortObject[sortBy] = order === 'asc' ? 1 : -1;
+
+    // Fetch videos with pagination
+    const videos = await Video.find(filter)
+    .select('_id video_url video_title video_duration video_thumbnail') // Only select required fields
+    .sort(sortObject)
+    .skip(skip)
+    .limit(parseInt(limit));
+
+    // Get total count for pagination
+    const totalVideos = await Video.countDocuments(filter);
+    const totalPages = Math.ceil(totalVideos / parseInt(limit));
+
+    // Transform data to ensure consistent format
+    const transformedVideos = videos.map(video => ({
+      _id: video._id,
+      video_url: video.video_url,
+      video_title: video.video_title,
+      video_duration: video.video_duration,
+      video_thumbnail: video.video_thumbnail
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        videos: transformedVideos,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalVideos,
+          hasNextPage: parseInt(page) < totalPages,
+          hasPrevPage: parseInt(page) > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching videos:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch videos',
+      details: error.message
+    });
+  }
+});
+
+// Add a route to get a specific video by ID
+app.get('/api/videos/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+
+    const video = await Video.findById(videoId)
+    .select('_id video_url video_title video_duration video_thumbnail');
+
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        error: 'Video not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        _id: video._id,
+        video_url: video.video_url,
+        video_title: video.video_title,
+        video_duration: video.video_duration,
+        video_thumbnail: video.video_thumbnail
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching video:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch video',
+      details: error.message
+    });
+  }
+});
+
+
+// First, create a middleware to check if user has already attempted the quiz
+const checkQuizAttempt = async (req, res, next) => {
+  try {
+    const { userId, videoId } = req.body;
+
+    const existingAttempt = await VideoUserQuiz.findOne({
+      userId,
+      videoId,
+      attempts: true
+    });
+
+    if (existingAttempt) {
+      return res.status(400).json({
+        success: false,
+        error: 'Quiz already attempted',
+        details: 'Users are not allowed to retake this quiz'
+      });
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error checking quiz attempt',
+      details: error.message
+    });
+  }
+};
+
+
+// First, create the route handler
+app.post('/api/submit-quiz-scores', checkQuizAttempt, async (req, res) => {
+  try {
+    const {
+      userId,
+      videoId,
+      userScore,
+      maxScore
+    } = req.body;
+
+    // Validate required fields
+    if (!userId || !videoId || userScore === undefined || !maxScore) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        requiredFields: ['userId', 'videoId', 'score', 'maxScore']
+      });
+    }
+
+    // Validate score is within possible range
+    if (userScore < 0 || userScore > maxScore) {
+      return res.status(400).json({
+        error: 'Invalid score',
+        details: `Score must be between 0 and ${maxScore}`
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    // Check if video exists
+    const video = await Video.findById(videoId);
+    if (!video) {
+      return res.status(404).json({
+        error: 'Video not found'
+      });
+    }
+
+    // Create new quiz result with current datetime
+    const quizResult = new VideoUserQuiz({
+      userId: userId,
+      videoId: videoId,
+      score: userScore,
+      attempts: true, // Mark as attempted
+      quizDate: new Date().toISOString() // Store as ISO string for datetime format
+    });
+
+    // Save to database
+    await quizResult.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Quiz score saved successfully',
+      data: {
+        score: quizResult.score,
+        attempts: quizResult.attempts,
+        quizDate: quizResult.quizDate
+      }
+    });
+
+  } catch (error) {
+    console.error('Error saving quiz score:', error);
+    res.status(500).json({
+      error: 'Failed to save quiz score',
+      details: error.message
+    });
+  }
+});
+
+
+// Add route for video-specific leaderboard
+app.get('/api/leaderboard/video/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const leaderboard = await VideoUserQuiz.aggregate([
+      {
+        $match: {
+          videoId: new Types.ObjectId(videoId)
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user'
+        }
+      },
+      {
+        $unwind: '$user'
+      },
+      {
+        $sort: { score: -1, quizDate: 1 }
+      },
+      {
+        $skip: skip
+      },
+      {
+        $limit: parseInt(limit)
+      },
+      {
+        $project: {
+          _id: 1,
+          'user.name': 1,
+          score: 1,
+          quizDate: 1
+        }
+      }
+    ]);
+
+    const video = await Video.findById(videoId).select('video_title');
+
+    res.json({
+      success: true,
+      data: {
+        videoTitle: video.video_title,
+        leaderboard: leaderboard.map((entry, index) => ({
+          rank: skip + index + 1,
+          userId: entry.user._id,
+          name: entry.user.name,
+          score: entry.score,
+          quizDate: entry.quizDate
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Error generating video leaderboard:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate video leaderboard',
+      details: error.message
+    });
+  }
+});
+

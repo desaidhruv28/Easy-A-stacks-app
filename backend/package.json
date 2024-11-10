@@ -4,7 +4,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "migrate": "node migrations/migrate.js"
   },
   "dependencies": {
     "axios": "^1.7.7",
@@ -12,7 +13,9 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "groq-sdk": "^0.7.0",
+    "migrate": "^2.1.0",
     "mongoose": "^8.8.1",
+    "node-cron": "^3.0.3",
     "nodemon": "^3.1.7",
     "youtube-transcript": "^1.0.8",
     "ytdl-core": "^4.11.5"
