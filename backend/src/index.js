@@ -1,23 +1,26 @@
 const express = require('express');
-const app = express();
 const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const userRoutes = require('./routes/user.routes');
 const { Video, User, VideoUserQuiz, Payment, Transaction } = require('./models');
 
+
 const Groq = require('groq-sdk');
 const axios = require('axios');
 const ytdl = require('ytdl-core');  // Changed to ytdl-core instead of youtube-dl-exec
 const { YoutubeTranscript } = require('youtube-transcript');
 const {Types} = require("mongoose");
+const { distributeLeaderboardRewards, initCronJobs } = require('./leaderboardPayment');
+
 require('dotenv').config();
 
+async function run() {
+  await distributeLeaderboardRewards();
+}
+run();
 
 dotenv.config();
-
-// Connect to MongoDB
-// connectDB();
 
 async function setupIndexes() {
   try {
@@ -44,18 +47,18 @@ connectDB().then(() => {
   setupIndexes();
 });
 
-
 const port = process.env.PORT || 5001;
+const app = express();
 
-// app.use(cors());
-// CORS configuration to allow everything
-app.use(cors({
-  origin: '*',               // Allow any origin
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all HTTP methods
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept'], // Allow specified headers
-  exposedHeaders: ['Content-Length', 'X-Content-Range'], // Expose specific headers
-}));
+
+app.use(cors());
 app.use(express.json());
+
+// After your Express app initialization
+// initCronJobs();
+
+
+console.log('Automated payment service started');
 
 
 // Initialize Groq with error handling
@@ -592,6 +595,14 @@ app.post('/api/submit-quiz-scores', checkQuizAttempt, async (req, res) => {
     if (!video) {
       return res.status(404).json({
         error: 'Video not found'
+      });
+    }
+
+    // Check if user exists
+    const userVideoExist = await VideoUserQuiz.findById(userId, videoId);
+    if (userVideoExist) {
+      return res.status(404).json({
+        error: 'User found'
       });
     }
 
