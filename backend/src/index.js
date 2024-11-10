@@ -30,7 +30,7 @@ app.use(express.json());
 let groq;
 try {
   groq = new Groq({
-    apiKey: "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"
+    apiKey: "################################"
   });
 } catch (error) {
   console.error('Error initializing Groq:', error);
